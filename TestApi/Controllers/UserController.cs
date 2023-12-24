@@ -1,5 +1,7 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -14,7 +16,31 @@ namespace TestApi.Controllers
         [HttpPost]
         [Route("[action]")]
         public IActionResult Login(UserModel userModel) {
-            return Ok(userModel);
+            try {
+                using NpgsqlConnection conn = new Connect().GetConnection();
+                using NpgsqlCommand cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    SELECT id FROM tb_user 
+                    WHERE usr = @usr 
+                    AND pwd = @pwd
+                ";
+                cmd.Parameters.AddWithValue("usr", userModel.Usr!);
+                cmd.Parameters.AddWithValue("pwd", userModel.Pwd!);
+
+                using NpgsqlDataReader reader = cmd.ExecuteReader();
+                if (reader.Read()) {
+                    userModel.Id = Convert.ToInt32(reader["id"]);
+                    string token = GenerateToken(userModel);
+
+                    return Ok(new { token = token, message = "success" });
+                }
+
+                return Unauthorized();
+            } catch (Exception ex) {
+                return StatusCode(StatusCodes.Status500InternalServerError, new {
+                    message = ex.Message
+                });
+            }
         }
 
 
@@ -30,7 +56,7 @@ namespace TestApi.Controllers
                     {
                         Subject = new ClaimsIdentity(new[] {
                             new Claim("Id", Guid.NewGuid().ToString()),
-                            new Claim(JwtRegisteredClaimNames.Sub, userModel.Usr!),
+                            new Claim(JwtRegisteredClaimNames.Sub, userModel.Id.ToString()),
                             new Claim(JwtRegisteredClaimNames.Email, "user@mail.com"),
                             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
                         }),
@@ -50,6 +76,55 @@ namespace TestApi.Controllers
             {
                 throw new Exception(ex.Message);
             }
+        }
+
+        [HttpPost]
+        [Route("[action]")]
+        [Authorize]
+        public IActionResult GetInfo() {
+            try {
+                int userId = GetUserIdFromAuth(HttpContext);
+                if (userId > 0) {
+                    using NpgsqlConnection conn = new Connect().GetConnection();
+                    using NpgsqlCommand cmd = conn.CreateCommand();
+                    cmd.CommandText = "SELECT name, level, usr FROM tb_user WHERE id = @id";
+                    cmd.Parameters.AddWithValue("id", userId);
+
+                    using NpgsqlDataReader reader = cmd.ExecuteReader();
+                    if (reader.Read()) {
+                        return Ok(new {
+                            name = reader["name"].ToString(),
+                            level = reader["level"].ToString(),
+                            usr = reader["usr"].ToString()
+                        });
+                    }
+                }
+                return Unauthorized();
+            } catch (Exception ex) {
+                return StatusCode(StatusCodes.Status500InternalServerError, new {
+                    message = ex.Message
+                });
+            }
+        }
+
+        private int GetUserIdFromAuth(HttpContext context) {
+            context.Request.Headers.TryGetValue("Authorization", out var token);
+            token = token.ToString().Replace("Bearer ", "");
+            Dictionary<string, string> dic = GetTokenInfo(token!);
+            return Convert.ToInt32(dic["sub"]);
+        }
+
+        private Dictionary<string, string> GetTokenInfo(string token) {
+            Dictionary<string, string> tokenInfo = new Dictionary<string, string>();
+            JwtSecurityTokenHandler handler = new JwtSecurityTokenHandler();
+            JwtSecurityToken jwtSecurityToken = handler.ReadJwtToken(token);
+            List<Claim> claims = jwtSecurityToken.Claims.ToList();
+
+            foreach (Claim claim in claims) {
+                tokenInfo.Add(claim.Type, claim.Value);
+            }
+
+            return tokenInfo;
         }
     }
 }
