@@ -126,5 +126,39 @@ namespace TestApi.Controllers
 
             return tokenInfo;
         }
+
+        [HttpPost]
+        [Route("[action]")]
+        public IActionResult ChangeProfileSave(UserModel userModel) {
+            try {
+                using NpgsqlConnection conn = new Connect().GetConnection();
+                using NpgsqlCommand cmd = conn.CreateCommand();
+                if (userModel.Name != "" || userModel.Usr != "" || userModel.Pwd != "") {
+                    string? sql = "UPDATE tb_user SET ";
+                    if (userModel.Name != "") sql += " name = @name";
+                    if (userModel.Usr != "") sql += " ,usr = @usr";
+                    if (userModel.Pwd != "") sql += " ,pwd = @pwd";
+
+                    sql += " WHERE id = @id";
+                    cmd.CommandText = sql;
+
+                    int userId = GetUserIdFromAuth(HttpContext);
+                    cmd.Parameters.AddWithValue("id", userId);
+
+                    if (userModel.Name != "") cmd.Parameters.AddWithValue("name", userModel.Name!);
+                    if (userModel.Usr != "") cmd.Parameters.AddWithValue("usr", userModel.Usr!);
+                    if (userModel.Pwd != "") cmd.Parameters.AddWithValue("pwd", userModel.Pwd!);
+
+                    if (cmd.ExecuteNonQuery() != -1) {
+                        return Ok(new { message = "success" });
+                    }
+                }
+                return Ok(new { message = "not update data" });
+            } catch (Exception ex) {
+                return StatusCode(StatusCodes.Status500InternalServerError, new {
+                    message = ex.Message
+                });
+            }
+        }
     }
 }
