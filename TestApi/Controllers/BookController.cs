@@ -194,5 +194,77 @@ namespace TestApi.Controllers
                 });
             }
         }
+
+        [HttpPost]
+        [Route("[action]")]
+        [Authorize]
+        public IActionResult Sale(string barcode) {
+           try {
+                // 1 find product
+                int id = 0;
+                int price = 0;
+
+                {
+                    using NpgsqlConnection conn = new Connect().GetConnection();
+                    using NpgsqlCommand cmd = conn.CreateCommand();
+                    cmd.CommandText = "SELECT id, price FROM tb_book WHERE isbn = @barcode";
+                    cmd.Parameters.AddWithValue("barcode", barcode);
+
+                    using NpgsqlDataReader reader = cmd.ExecuteReader();
+
+                    if (reader.Read()) {
+                        id = Convert.ToInt32(reader["id"]);
+                        price = Convert.ToInt32(reader["price"]);
+                    } else {
+                        return Ok(new { message = "not found" });
+                    }
+                }
+                // 2 create bill sale
+                int billSaleId = 0;
+                {
+                    using NpgsqlConnection conn = new Connect().GetConnection();
+                    using NpgsqlCommand cmd = conn.CreateCommand();
+                    cmd.CommandText = "SELECT id FROM tb_bill_sale WHERE pay_at IS NULL"; //เลือก id จาก tb_bill_sale เงื่อนไข pay_at ต้องเป็นค่า null
+
+                    using NpgsqlDataReader reader = cmd.ExecuteReader();
+                    if (reader.Read()) {
+                        billSaleId = Convert.ToInt32(reader["id"]); // ถ้าอ่านค่าได้ให้แปลง id เป็น int
+                    }
+                }
+
+                if (billSaleId == 0) { 
+                    {
+                        using NpgsqlConnection conn = new Connect().GetConnection();
+                        using NpgsqlCommand cmd = conn.CreateCommand();
+                        cmd.CommandText = "INSERT INTO tb_bill_sale(created_at) VALUES(NOW()) RETURNING id"; // ถ้า billSaleId มีค่า = 0 ให้สร้างเวลาปัจจุบันและ return id ออกไป
+                        cmd.ExecuteNonQuery();
+                        int result = cmd.ExecuteNonQuery(); //คิวลี่ใส่ในผลลัพธ์
+
+                        return Ok(new { id = result }); //นำผลลัพธ์ใส่ใน id แล้ว return ออกมา
+                    }
+                }
+                // 3 create bill sale detail
+                {
+                    using NpgsqlConnection conn = new Connect().GetConnection();
+                    using NpgsqlCommand cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+                        INSERT INTO tb_bill_sale_detail(bill_sale_id, book_id, qty, price)
+                        VALUES(@bill_sale_id, @book_id, 1, @price)
+                    ";
+                    cmd.Parameters.AddWithValue("bill_sale_id", billSaleId);
+                    cmd.Parameters.AddWithValue("book_id", id);
+                    cmd.Parameters.AddWithValue("price", price);
+
+                    if (cmd.ExecuteNonQuery() != -1) {
+                        return Ok(new { message = "success", billSaleId = billSaleId });
+                    }
+                }
+                return Ok();
+            } catch (Exception ex) {
+                return StatusCode(StatusCodes.Status500InternalServerError, new {
+                    message = ex.Message
+                });
+            }
+        }
     }
 }
