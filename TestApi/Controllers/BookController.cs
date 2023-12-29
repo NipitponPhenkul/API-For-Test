@@ -245,19 +245,172 @@ namespace TestApi.Controllers
                 }
                 // 3 create bill sale detail
                 {
-                    using NpgsqlConnection conn = new Connect().GetConnection();
-                    using NpgsqlCommand cmd = conn.CreateCommand();
-                    cmd.CommandText = @"
-                        INSERT INTO tb_bill_sale_detail(bill_sale_id, book_id, qty, price)
-                        VALUES(@bill_sale_id, @book_id, 1, @price)
+                    bool foundProduct = false;
+                    {
+                        using NpgsqlConnection conn = new Connect().GetConnection();
+                        using NpgsqlCommand cmd = conn.CreateCommand();
+                        cmd.CommandText = @"
+                        SELECT COUNT(id) AS totalRow FROM tb_bill_sale_detail 
+                        WHERE bill_sale_id = @bill_sale_id 
+                        AND book_id = @book_id
                     ";
-                    cmd.Parameters.AddWithValue("bill_sale_id", billSaleId);
-                    cmd.Parameters.AddWithValue("book_id", id);
-                    cmd.Parameters.AddWithValue("price", price);
+                        cmd.Parameters.AddWithValue("bill_sale_id", billSaleId);
+                        cmd.Parameters.AddWithValue("book_id", id);
 
-                    if (cmd.ExecuteNonQuery() != -1) {
-                        return Ok(new { message = "success", billSaleId = billSaleId });
+                        using NpgsqlDataReader reader = cmd.ExecuteReader();
+                        if (reader.Read())
+                        {
+                            int totalRow = Convert.ToInt32(reader["totalRow"]);
+                            foundProduct = (totalRow > 0);
+                        }
                     }
+                    {
+                        if (foundProduct)
+                        {
+                            // update
+                            NpgsqlConnection conn = new Connect().GetConnection();
+                            NpgsqlCommand cmd = conn.CreateCommand();
+                            cmd.CommandText = @"
+                                UPDATE tb_bill_sale_detail
+                                SET qty = qty + 1
+                                WHERE bill_sale_id = @bill_sale_id
+                                AND book_id = @book_id
+                            ";
+                            cmd.Parameters.AddWithValue("bill_sale_id", billSaleId);
+                            cmd.Parameters.AddWithValue("book_id", id);
+
+                            if (cmd.ExecuteNonQuery() != -1)
+                            {
+                                return Ok(new { message = "success", billSaleId = billSaleId });
+                            }
+                        } else {
+                            // insert
+                            NpgsqlConnection conn = new Connect().GetConnection();
+                            NpgsqlCommand cmd = conn.CreateCommand();
+                            cmd.CommandText = @"
+                                INSERT INTO tb_bill_sale_detail(bill_sale_id, book_id, qty, price)
+                                VALUES(@bill_sale_id, @book_id, 1, @price)
+                            ";
+                            cmd.Parameters.AddWithValue("bill_sale_id", billSaleId);
+                            cmd.Parameters.AddWithValue("book_id", id);
+                            cmd.Parameters.AddWithValue("price", price);
+
+                            if (cmd.ExecuteNonQuery() != -1) {
+                                return Ok(new { message = "success", billSaleId = billSaleId });
+                            }
+                        } 
+                    }
+
+
+                    
+                }
+                return Ok();
+            } catch (Exception ex) {
+                return StatusCode(StatusCodes.Status500InternalServerError, new {
+                    message = ex.Message
+                });
+            }
+        }
+
+        [HttpGet]
+        [Route("[action]/{billSaleId}")]
+        [Authorize]
+        public IActionResult BillSaleInfo(int billSaleId) {
+            try {
+                NpgsqlConnection conn = new Connect().GetConnection();
+                NpgsqlCommand cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    SELECT
+                        tb_bill_sale_detail.price,
+                        tb_bill_sale_detail.qty,
+                        tb_bill_sale_detail.id,
+                        tb_book.isbn,
+                        tb_book.name
+                    FROM tb_bill_sale_detail
+                    LEFT JOIN tb_book ON tb_book.id = tb_bill_sale_detail.book_id
+                    WHERE bill_sale_id = @bill_sale_id 
+                    ORDER BY tb_bill_sale_detail.id DESC
+                ";
+                cmd.Parameters.AddWithValue("bill_sale_id", billSaleId);
+                using NpgsqlDataReader reader = cmd.ExecuteReader();
+                List<object> list = new List<object>();
+                while (reader.Read()) {
+                    list.Add(new
+                    {
+                        price = Convert.ToInt32(reader["price"]),
+                        qty = Convert.ToInt32(reader["qty"]),
+                        id = Convert.ToInt32(reader["id"]),
+                        isbn = reader["isbn"].ToString(),
+                        name = reader["name"].ToString()
+                    });
+                }
+
+                return Ok(new { results = list });
+
+            } catch (Exception ex) {
+                return StatusCode(StatusCodes.Status500InternalServerError, new {
+                    message = ex.Message
+                });
+            }
+        }
+
+        [HttpGet]
+        [Route("[action]")]
+        [Authorize]
+        public IActionResult LastBillSale() {
+            try {
+                using NpgsqlConnection conn = new Connect().GetConnection();
+                using NpgsqlCommand cmd = conn.CreateCommand();
+                cmd.CommandText = "SELECT id FROM tb_bill_sale WHERE pay_at IS NULL";
+                using NpgsqlDataReader reader = cmd.ExecuteReader();
+                if (reader.Read()) {
+                    return Ok(new {
+                        billSaleId = Convert.ToInt32(reader["id"])
+                    });
+                }
+
+                return Ok();
+            } catch (Exception ex) {
+                return StatusCode(StatusCodes.Status500InternalServerError, new {
+                    message = ex.Message
+                });
+            }
+                     
+        }
+
+        [HttpDelete]
+        [Route("[action]/{id}")]
+        [Authorize]
+        public IActionResult DeleteSaleItem(int id) {
+            try {
+                using NpgsqlConnection conn = new Connect().GetConnection();
+                using NpgsqlCommand cmd = conn.CreateCommand();
+                cmd.CommandText = "DELETE FROM tb_bill_sale_detail WHERE id = @id";
+                cmd.Parameters.AddWithValue("id", id);
+                if (cmd.ExecuteNonQuery() != -1) {
+                    return Ok(new { message = "success" });
+                }
+                return Ok();
+            } catch (Exception ex) {
+                return StatusCode(StatusCodes.Status500InternalServerError, new {
+                    message = ex.Message
+                });
+            }
+        }
+
+        [HttpPut]
+        [Route("[action]/{id}/{qty}")]
+        [Authorize]
+        public IActionResult EditSaleItem(int id, int qty) {
+            try {
+                using NpgsqlConnection conn = new Connect().GetConnection();
+                using NpgsqlCommand cmd = conn.CreateCommand();
+                cmd.CommandText = "UPDATE tb_bill_sale_detail SET qty = @qty WHERE id = @id";
+                cmd.Parameters.AddWithValue("qty", qty);
+                cmd.Parameters.AddWithValue("id", id);
+
+                if (cmd.ExecuteNonQuery() != -1) {
+                    return Ok(new { message = "success" });
                 }
                 return Ok();
             } catch (Exception ex) {
