@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
+using System.Diagnostics;
 using TestApi.Models;
 
 namespace TestApi.Controllers
@@ -199,7 +200,7 @@ namespace TestApi.Controllers
         [Route("[action]")]
         [Authorize]
         public IActionResult Sale(string barcode) {
-           try {
+            try {
                 // 1 find product
                 int id = 0;
                 int price = 0;
@@ -232,7 +233,7 @@ namespace TestApi.Controllers
                     }
                 }
 
-                if (billSaleId == 0) { 
+                if (billSaleId == 0) {
                     {
                         using NpgsqlConnection conn = new Connect().GetConnection();
                         using NpgsqlCommand cmd = conn.CreateCommand();
@@ -298,11 +299,11 @@ namespace TestApi.Controllers
                             if (cmd.ExecuteNonQuery() != -1) {
                                 return Ok(new { message = "success", billSaleId = billSaleId });
                             }
-                        } 
+                        }
                     }
 
 
-                    
+
                 }
                 return Ok();
             } catch (Exception ex) {
@@ -363,19 +364,46 @@ namespace TestApi.Controllers
                 using NpgsqlCommand cmd = conn.CreateCommand();
                 cmd.CommandText = "SELECT id FROM tb_bill_sale WHERE pay_at IS NULL";
                 using NpgsqlDataReader reader = cmd.ExecuteReader();
-                if (reader.Read()) {
-                    return Ok(new {
+                if (reader.Read())
+                {
+                    return Ok(new
+                    {
                         billSaleId = Convert.ToInt32(reader["id"])
                     });
                 }
+                else
+                {
+                    int billSaleId = 0;
+                    {
+                        using NpgsqlConnection conn2 = new Connect().GetConnection();
+                        using NpgsqlCommand cmd2 = conn2.CreateCommand();
+                        cmd2.CommandText = "INSERT INTO tb_bill_sale(created_at) VALUES(NOW())";
+                        cmd2.ExecuteNonQuery();
+                    }
+                    {
+                        using NpgsqlConnection conn2 = new Connect().GetConnection();
+                        using NpgsqlCommand cmd2 = conn2.CreateCommand();
+                        cmd2.CommandText = "SELECT id FROM tb_bill_sale WHERE pay_at IS NULL";
 
-                return Ok();
+                        using NpgsqlDataReader reader2 = cmd2.ExecuteReader();
+
+                        if (reader2.Read())
+                        {
+                            billSaleId = Convert.ToInt32(reader2["id"]);
+                        }
+                    }
+
+                    return Ok(new
+                    {
+                        billSaleId = billSaleId
+                    });
+                }
             } catch (Exception ex) {
                 return StatusCode(StatusCodes.Status500InternalServerError, new {
                     message = ex.Message
                 });
             }
-                     
+
         }
 
         [HttpDelete]
@@ -409,6 +437,49 @@ namespace TestApi.Controllers
                 cmd.Parameters.AddWithValue("qty", qty);
                 cmd.Parameters.AddWithValue("id", id);
 
+                if (cmd.ExecuteNonQuery() != -1) {
+                    return Ok(new { message = "success" });
+                }
+                return Ok();
+            } catch (Exception ex) {
+                return StatusCode(StatusCodes.Status500InternalServerError, new {
+                    message = ex.Message
+                });
+            }
+        }
+
+        [HttpDelete]
+        [Route("[action]/{billSaleId}")]
+        [Authorize]
+        public IActionResult ClearSaleItem(int billSaleId) {
+            try {
+                using NpgsqlConnection conn = new Connect().GetConnection();
+                using NpgsqlCommand cmd = conn.CreateCommand();
+                cmd.CommandText = "DELETE FROM tb_bill_sale_detail WHERE bill_sale_id = @bill_sale_id";
+                cmd.Parameters.AddWithValue("bill_sale_id", billSaleId);
+
+                if (cmd.ExecuteNonQuery() != -1) {
+                    return Ok(new { message = "success" });
+                }
+
+                return Ok();
+            } catch (Exception ex) {
+                return StatusCode(StatusCodes.Status500InternalServerError, new
+                {
+                    message = ex.Message
+                });
+            }
+        }
+
+        [HttpGet]
+        [Route("[action]/{billSaleId}")]
+        [Authorize]
+        public IActionResult EndSale(int billSaleId) {
+            try {
+                using NpgsqlConnection conn = new Connect().GetConnection();
+                using NpgsqlCommand cmd = conn.CreateCommand();
+                cmd.CommandText = "UPDATE tb_bill_sale SET pay_at = NOW() WHERE id = @bill_sale_id";
+                cmd.Parameters.AddWithValue("bill_sale_id", billSaleId);
                 if (cmd.ExecuteNonQuery() != -1) {
                     return Ok(new { message = "success" });
                 }
