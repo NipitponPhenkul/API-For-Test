@@ -564,25 +564,6 @@ namespace TestApi.Controllers
 
                 while (reader.Read())
                 {
-                    object payAtValue = reader["pay_at"];
-                    DateTime payAtDateTime;
-
-                        //ตรวจสอบว่า pay_at ไม่ได้ null และมีค่าเป็น DateTime
-                        if (payAtValue != DBNull.Value && payAtValue is DateTime)
-                        {
-                            payAtDateTime = Convert.ToDateTime(reader["pay_at"]);
-                    }
-                        //ตรวจสอบว่า pay_at ไม่ได้ null และมีค่าเป็น TimeSpan
-                        else if (payAtValue != DBNull.Value && payAtValue is TimeSpan)
-                        {
-                            //เปลี่ยนค่า TimeSpan ให้เป็น DateTime
-                            payAtDateTime = DateTime.Today.Add((TimeSpan)payAtValue);
-                    }
-                        else
-                        {
-                        // เปลี่ยนค่าอื่น ๆ ให้เป็น DateTime Default
-                        payAtDateTime = Convert.ToDateTime(reader["pay_at"]);
-                        }
                     list.Add(new
                     {
                         price = Convert.ToInt32(reader["price"]),
@@ -591,7 +572,7 @@ namespace TestApi.Controllers
                         isbn = reader["isbn"].ToString(),
                         name = reader["name"].ToString(),
                         bill_sale_id = Convert.ToInt32(reader["bill_sale_id"]),
-                        pay_at = payAtDateTime
+                        pay_at = Convert.ToDateTime(reader["pay_at"])
                     });
                 }
 
