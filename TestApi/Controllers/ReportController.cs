@@ -79,5 +79,48 @@ namespace TestApi.Controllers
                 });
             }
         }
+
+        [HttpGet]
+        [Route("[action]/{year}/{month}")]
+        //[Authorize]
+        public IActionResult SumSalePerMonth(int year, int month) {
+            try {
+                int totalDay = DateTime.DaysInMonth(year, month);
+                List<object> list = new List<object>();
+
+                for (int i = 1; i <= totalDay; i++) {
+                    using NpgsqlConnection conn = new Connect().GetConnection();
+                    using NpgsqlCommand cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+                        SELECT SUM(qty * price) AS totalSum 
+                        FROM tb_bill_sale_detail
+                        LEFT JOIN tb_bill_sale ON tb_bill_sale.id = tb_bill_sale_detail.bill_sale_id
+                        WHERE
+                            pay_at IS NOT NULL
+                            AND (
+                                EXTRACT(YEAR FROM pay_at) = @year
+                                AND EXTRACT(MONTH FROM pay_at) = @month
+                                AND EXTRACT(DAY FROM pay_at) = @day
+                            )
+                    ";
+                    cmd.Parameters.AddWithValue("year", year);
+                    cmd.Parameters.AddWithValue("month", month);
+                    cmd.Parameters.AddWithValue("day", i);
+
+                    object obj = cmd.ExecuteScalar()!;
+
+                        list.Add(new {
+                            totalSum = obj.GetType().ToString() == "System.DBNull" ? 0 : obj,
+                            day = i
+                        });
+                }
+
+                return Ok(new { results = list });
+            } catch (Exception ex) {
+                return StatusCode(StatusCodes.Status500InternalServerError, new {
+                    message = ex.Message
+                });
+            }
+        }
     }
 }
