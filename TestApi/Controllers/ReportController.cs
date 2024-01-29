@@ -122,5 +122,51 @@ namespace TestApi.Controllers
                 });
             }
         }
+
+        [HttpGet]
+        [Route("[action]/{year}")]
+        [Authorize]
+        public IActionResult SumSalePerYear(int year) {
+            try
+            {
+                List<object> list = new List<object>();
+
+                for (int i = 1; i <= 12; i++)
+                {
+                    using NpgsqlConnection conn = new Connect().GetConnection();
+                    using NpgsqlCommand cmd = conn.CreateCommand();
+                    cmd.CommandText = @"
+                        SELECT SUM(qty * price) AS totalSum 
+                        FROM tb_bill_sale_detail
+                        LEFT JOIN tb_bill_sale ON tb_bill_sale.id = tb_bill_sale_detail.bill_sale_id
+                        WHERE
+                            pay_at IS NOT NULL
+                            AND (
+                                EXTRACT(YEAR FROM pay_at) = @year
+                                AND EXTRACT(MONTH FROM pay_at) = @month
+                            )
+                    ";
+                    cmd.Parameters.AddWithValue("year", year);
+                    cmd.Parameters.AddWithValue("month", i);
+
+                    object obj = cmd.ExecuteScalar()!;
+
+                    list.Add(new
+                    {
+                        totalSum = obj.GetType().ToString() == "System.DBNull" ? 0 : obj,
+                        month = i
+                    });
+                }
+
+                return Ok(new { results = list });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new
+                {
+                    message = ex.Message
+                });
+            }
+        }
     }
 }
